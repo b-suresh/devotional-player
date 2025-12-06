@@ -1,18 +1,19 @@
 const { initializeApp } = require("firebase/app");
-const { getStorage, ref, uploadBytes, getDownloadURL } = require("firebase/storage");
+const { getStorage, ref, uploadBytes, getDownloadURL, getMetadata } = require("firebase/storage");
 const fs = require("fs");
 const path = require("path");
+require('dotenv').config({ path: path.resolve(__dirname, '../.env.local') });
 
 // --- CONFIGURATION ---
 // 1. Get these from your Firebase Console -> Project Settings
 const firebaseConfig = {
-    apiKey: "AIzaSyBJLaFLflEPCNadULCUDFBKSLHNoMmRkk4",
-    authDomain: "thiruppugazh-storage.firebaseapp.com",
-    projectId: "thiruppugazh-storage",
-    storageBucket: "thiruppugazh-storage.firebasestorage.app",
-    messagingSenderId: "470348799550",
-    appId: "1:470348799550:web:8b2fb22e35de6c0b6bfb6f",
-    measurementId: "G-1MXKJZT74X"
+    apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+    authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+    storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+    appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+    measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID
 };
 
 // 2. Path to your local songs folder
@@ -27,6 +28,18 @@ async function uploadFile(filePath, fileName) {
     try {
         const fileBuffer = fs.readFileSync(filePath);
         const storageRef = ref(storage, `songs/${fileName}`);
+
+        // Check if file exists
+        try {
+            await getMetadata(storageRef);
+            console.log(`⏭️  Skipping ${fileName} (already exists)`);
+            return;
+        } catch (error) {
+            if (error.code !== 'storage/object-not-found') {
+                throw error;
+            }
+            // File doesn't exist, proceed with upload
+        }
 
         console.log(`Uploading ${fileName}...`);
         const snapshot = await uploadBytes(storageRef, fileBuffer);
