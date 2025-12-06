@@ -1,65 +1,177 @@
-import Image from "next/image";
+"use client";
+
+import React, { useState, useEffect } from "react";
+import AudioPlayer from "@/components/AudioPlayer";
+import VoiceControl from "@/components/VoiceControl";
+import InstallPrompt from "@/components/InstallPrompt";
+import { Song } from "@/types";
+import { getAllSongs } from "@/lib/firebase";
+
+import Fuse from "fuse.js";
 
 export default function Home() {
+  const [songs, setSongs] = useState<Song[]>([]);
+  const [currentSong, setCurrentSong] = useState<Song | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [lastHeard, setLastHeard] = useState<string>("");
+
+  // UI State
+  const [searchQuery, setSearchQuery] = useState("");
+  const [visibleCount, setVisibleCount] = useState(20);
+
+  useEffect(() => {
+    const fetchSongs = async () => {
+      try {
+        const fetchedSongs = await getAllSongs(); // Use the new function
+        setSongs(fetchedSongs);
+      } catch (err) {
+        console.error("Failed to load songs", err);
+        setError("Failed to load songs from Firebase.");
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchSongs();
+  }, []);
+
+  // Helper to play a song
+  const playSong = async (song: Song) => {
+    try {
+      setError(null);
+      console.log(`Playing ${song.title}`);
+      setCurrentSong(song);
+      setIsPlaying(true);
+    } catch (err) {
+      console.error("Error playing song:", err);
+      setError("Could not play song.");
+    }
+  };
+
+  const handleVoiceCommand = (transcript: string) => {
+    setLastHeard(transcript);
+    const lowerTranscript = transcript.toLowerCase().replace("play", "").trim(); // Remove "play" command
+
+    if (!songs.length) return;
+
+    // Configure Fuse for fuzzy search
+    const fuse = new Fuse(songs, {
+      keys: ["title", "tags", "fileName"],
+      threshold: 0.4, // 0.0 is exact match, 1.0 is match anything. 0.4 is good for typos/phonetic.
+      includeScore: true
+    });
+
+    const results = fuse.search(lowerTranscript);
+
+    if (results.length > 0) {
+      const bestMatch = results[0].item;
+      console.log(`Matched "${transcript}" to "${bestMatch.title}" (Score: ${results[0].score})`);
+      playSong(bestMatch);
+    } else {
+      console.log(`No match found for "${transcript}"`);
+      // Optional: Speak back "Song not found"
+    }
+  };
+
+  // Filter songs based on search query
+  const filteredSongs = songs.filter(song =>
+    song.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    song.tags?.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
+
+  const visibleSongs = filteredSongs.slice(0, visibleCount);
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="min-h-screen bg-black text-white font-sans pb-32">
+      <header className="p-6 border-b border-gray-800 sticky top-0 bg-black/90 backdrop-blur-md z-10">
+        <h1 className="text-2xl font-bold text-orange-500 tracking-wide text-center">
+          Devotional Voice Player
+        </h1>
+      </header>
+
+      <main className="container mx-auto px-4">
+        <InstallPrompt />
+        <VoiceControl onCommand={handleVoiceCommand} />
+
+        {lastHeard && (
+          <div className="text-center text-gray-500 mt-2 text-sm">
+            Heard: <span className="text-orange-400 italic">"{lastHeard}"</span>
+          </div>
+        )}
+
+        {error && (
+          <div className="bg-red-900/50 text-red-200 p-4 rounded-lg text-center my-4">
+            {error}
+          </div>
+        )}
+
+        {/* Search Bar */}
+        <div className="my-6">
+          <input
+            type="text"
+            placeholder="Search songs..."
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setVisibleCount(20); // Reset pagination on search
+            }}
+            className="w-full bg-gray-900 border border-gray-800 rounded-full px-6 py-3 text-white focus:outline-none focus:border-orange-500 transition"
+          />
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+
+        {loading ? (
+          <div className="text-center text-gray-400 mt-8">Loading songs from Firebase...</div>
+        ) : (
+          <div className="mt-4">
+            <h2 className="text-xl font-semibold mb-4 text-gray-300">
+              {searchQuery ? `Found ${filteredSongs.length} Songs` : `Available Songs (${songs.length})`}
+            </h2>
+
+            <div className="grid gap-3">
+              {visibleSongs.map(song => (
+                <div
+                  key={song.id}
+                  onClick={() => playSong(song)}
+                  className={`p-4 rounded-lg cursor-pointer transition flex items-center justify-between ${currentSong?.id === song.id
+                    ? "bg-orange-900/30 border border-orange-500/50"
+                    : "bg-gray-900 hover:bg-gray-800"
+                    }`}
+                >
+                  <span className="font-medium">{song.title}</span>
+                  <span className="text-xs text-gray-500 truncate max-w-[100px]">{song.fileName}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Load More Button */}
+            {visibleCount < filteredSongs.length && (
+              <div className="text-center mt-8">
+                <button
+                  onClick={() => setVisibleCount(prev => prev + 20)}
+                  className="bg-gray-800 hover:bg-gray-700 text-white px-6 py-2 rounded-full transition text-sm font-medium"
+                >
+                  Load More
+                </button>
+              </div>
+            )}
+
+            {filteredSongs.length === 0 && !loading && (
+              <div className="text-center text-gray-500 mt-8">
+                No songs found matching "{searchQuery}"
+              </div>
+            )}
+          </div>
+        )}
       </main>
+
+      <AudioPlayer
+        currentSong={currentSong}
+        isPlaying={isPlaying}
+        onPlayPause={() => setIsPlaying(!isPlaying)}
+        onNext={() => { }} // TODO: Implement next
+        onPrev={() => { }} // TODO: Implement prev
+      />
     </div>
   );
 }
